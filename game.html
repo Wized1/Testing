@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Endroid Maze</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#000022;display:flex;justify-content:center;align-items:center;}
+.wrap{width:95vw;height:95vh;display:flex;justify-content:center;align-items:center;position:relative;}
+canvas{background:#000022;border-radius:12px;box-shadow:0 8px 30px rgba(5,30,60,0.12);touch-action:none;display:block;}
+
+/* joystick */
+#joystick{
+  position:absolute;bottom:30px;left:30px;width:120px;height:120px;border-radius:50%;
+  background:rgba(255,255,255,0.15);touch-action:none;display:flex;justify-content:center;align-items:center;
+  font-size:20px;font-weight:bold;color:white;user-select:none;pointer-events:auto;
+}
+#arrows{
+  position:absolute;width:100%;height:100%;display:grid;
+  grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
+  text-align:center;align-items:center;justify-items:center;pointer-events:none;
+}
+#arrows div{opacity:0.5;}
+#stick{position:absolute;width:60px;height:60px;background:#00ccff;border-radius:50%;top:30px;left:30px;touch-action:none;}
+
+/* win screen overlay */
+#winScreen{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(255,255,255,0.9);padding:30px 50px;border-radius:12px;
+  font-size:24px;color:#00ccff;font-weight:bold;display:none;text-align:center;
+  box-shadow:0 8px 30px rgba(5,30,60,0.2);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="c"></canvas>
+  <div id="joystick">
+    <div id="arrows">
+      <div></div><div>↑</div><div></div>
+      <div>←</div><div></div><div>→</div>
+      <div></div><div>↓</div><div></div>
+    </div>
+    <div id="stick"></div>
+  </div>
+  <div id="winScreen">You  Win 🎉</div>
+  <div id="winScreen">Desktop Site for difficult mode</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', {alpha:false});
+const joystick = document.getElementById('joystick');
+const stick = document.getElementById('stick');
+const winScreen = document.getElementById('winScreen');
+
+let W,H,cols,rows,cell,maze=[];
+let ball={x:0,y:0,vx:0,vy:0,r:0},goal={x:0,y:0,r:0};
+const wallW = 6;
+const accel = 0.4;
+const damping = 0.97;
+const gravity = 0.07;  // subtle gravity
+const maxVelocity = 10;
+const bounceFactor = 0.3; // subtle bounce
+
+// trail
+const trail = [];
+const maxTrailLength = 12; // number of positions
+
+function resize(){
+  W = canvas.parentElement.clientWidth;
+  H = canvas.parentElement.clientHeight;
+  canvas.width = W;
+  canvas.height = H;
+  const targetCols = Math.max(5,Math.round(W/56));
+  const targetRows = Math.max(5,Math.round(H/56));
+  const pad = 24;
+  cell = Math.max(28,Math.floor(Math.min((W-pad*2)/targetCols,(H-pad*2)/targetRows)));
+  cols = Math.floor((W-pad*2)/cell);
+  rows = Math.floor((H-pad*2)/cell);
+  ball.r = Math.round(cell*0.28);
+  goal.r = Math.round(cell*0.4);
+  buildMaze();
+}
+
+function buildMaze(){
+  maze=[];
+  for(let y=0;y<rows;y++){maze[y]=[];for(let x=0;x<cols;x++)maze[y][x]={v:false,w:[1,1,1,1]};}
+  const stack=[];let cx=0,cy=0;maze[0][0].v=true;let visited=1,total=cols*rows;
+  while(visited<total){
+    const n=[];
+    if(cy>0&&!maze[cy-1][cx].v)n.push(['up',cx,cy-1]);
+    if(cx<cols-1&&!maze[cy][cx+1].v)n.push(['right',cx+1,cy]);
+    if(cy<rows-1&&!maze[cy+1][cx].v)n.push(['down',cx,cy+1]);
+    if(cx>0&&!maze[cy][cx-1].v)n.push(['left',cx-1,cy]);
+    if(n.length){
+      const nxt=n[Math.floor(Math.random()*n.length)]; const dir=nxt[0],nx=nxt[1],ny=nxt[2];
+      if(dir==='up'){maze[cy][cx].w[0]=0;maze[ny][nx].w[2]=0;}
+      if(dir==='right'){maze[cy][cx].w[1]=0;maze[ny][nx].w[3]=0;}
+      if(dir==='down'){maze[cy][cx].w[2]=0;maze[ny][nx].w[0]=0;}
+      if(dir==='left'){maze[cy][cx].w[3]=0;maze[ny][nx].w[1]=0;}
+      stack.push([cx,cy]);cx=nx;cy=ny;maze[cy][cx].v=true;visited++;
+    }else{const p=stack.pop();if(!p)break;cx=p[0];cy=p[1];}
+  }
+  const ox = Math.round((W - cols*cell)/2);
+  const oy = Math.round((H - rows*cell)/2);
+  ball.x = ox+cell/2; ball.y = oy+cell/2; ball.vx=0; ball.vy=0;
+  goal.x = ox+(cols-0.5)*cell; goal.y = oy+(rows-0.5)*cell;
+  trail.length = 0; // clear trail on new maze
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  const ox = Math.round((W - cols*cell)/2);
+  const oy = Math.round((H - rows*cell)/2);
+  // neon walls
+  for(let y=0;y<rows;y++){
+    for(let x=0;x<cols;x++){
+      const c=maze[y][x];const sx=ox+x*cell;const sy=oy+y*cell;
+      ctx.strokeStyle = "#0ff"; ctx.shadowColor="#0ff"; ctx.shadowBlur=10; ctx.lineWidth=wallW;
+      if(c.w[0]){ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx+cell,sy);ctx.stroke();}
+      if(c.w[1]){ctx.beginPath();ctx.moveTo(sx+cell,sy);ctx.lineTo(sx+cell,sy+cell);ctx.stroke();}
+      if(c.w[2]){ctx.beginPath();ctx.moveTo(sx+cell,sy+cell);ctx.lineTo(sx,sy+cell);ctx.stroke();}
+      if(c.w[3]){ctx.beginPath();ctx.moveTo(sx,sy+cell);ctx.lineTo(sx,sy);ctx.stroke();}
+    }
+  }
+  ctx.shadowBlur=0;
+
+  // goal neon
+  ctx.beginPath();ctx.fillStyle="#00ffcc";ctx.shadowColor="#00ffcc";ctx.shadowBlur=20;ctx.arc(goal.x,goal.y,goal.r,0,2*Math.PI);ctx.fill();
+  ctx.beginPath();ctx.fillStyle="#ffd700";ctx.arc(goal.x,goal.y,goal.r*0.5,0,2*Math.PI);ctx.fill();
+  ctx.shadowBlur=0;
+
+  // draw trail
+  for(let i=0;i<trail.length;i++){
+    const p = trail[i];
+    const alpha = (i+1)/trail.length*0.4; // fading effect
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(0,204,255,${alpha})`;
+    ctx.shadowColor="#00ccff";
+    ctx.shadowBlur=10;
+    ctx.arc(p.x,p.y,ball.r*0.9,0,2*Math.PI);
+    ctx.fill();
+  }
+  ctx.shadowBlur=0;
+
+  // ball neon
+  ctx.beginPath();ctx.fillStyle="#00ccff";ctx.shadowColor="#00ccff";ctx.shadowBlur=20;ctx.arc(ball.x,ball.y,ball.r,0,2*Math.PI);ctx.fill();
+  ctx.shadowBlur=0;
+}
+
+function collide(){
+  const ox = Math.round((W - cols*cell)/2);
+  const oy = Math.round((H - rows*cell)/2);
+  const cx = Math.floor((ball.x - ox)/cell);
+  const cy = Math.floor((ball.y - oy)/cell);
+  if(cx<0||cy<0||cx>=cols||cy>=rows)return;
+  const c = maze[cy][cx];
+  const px = ox+cx*cell, py = oy+cy*cell;
+  if(c.w[0] && ball.y-ball.r<py){ ball.y=py+ball.r; if(ball.vy<0)ball.vy=-ball.vy*bounceFactor; }
+  if(c.w[2] && ball.y+ball.r>py+cell){ ball.y=py+cell-ball.r; if(ball.vy>0)ball.vy=-ball.vy*bounceFactor; }
+  if(c.w[3] && ball.x-ball.r<px){ ball.x=px+ball.r; if(ball.vx<0)ball.vx=-ball.vx*bounceFactor; }
+  if(c.w[1] && ball.x+ball.r>px+cell){ ball.x=px+cell-ball.r; if(ball.vx>0)ball.vx=-ball.vx*bounceFactor; }
+}
+
+let showWin = false;
+function update(){
+  ball.vy += gravity;
+  if(ball.vx>maxVelocity)ball.vx=maxVelocity;
+  if(ball.vx<-maxVelocity)ball.vx=-maxVelocity;
+  if(ball.vy>maxVelocity)ball.vy=maxVelocity;
+  if(ball.vy<-maxVelocity)ball.vy=-maxVelocity;
+  ball.x+=ball.vx; ball.y+=ball.vy;
+  collide();
+
+  // update trail
+  trail.push({x:ball.x,y:ball.y});
+  if(trail.length>maxTrailLength)trail.shift();
+
+  const dx = ball.x - goal.x, dy = ball.y - goal.y;
+  if(Math.hypot(dx,dy)<ball.r+goal.r*0.6 && !showWin){
+    showWin=true;
+    winScreen.style.display='block';
+    setTimeout(()=>{winScreen.style.display='none'; showWin=false; buildMaze();},3000);
+  }
+}
+
+const keys={up:0,down:0,left:0,right:0};
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowUp'||e.key==='w')keys.up=1;
+  if(e.key==='ArrowDown'||e.key==='s')keys.down=1;
+  if(e.key==='ArrowLeft'||e.key==='a')keys.left=1;
+  if(e.key==='ArrowRight'||e.key==='d')keys.right=1;
+});
+window.addEventListener('keyup',e=>{
+  if(e.key==='ArrowUp'||e.key==='w')keys.up=0;
+  if(e.key==='ArrowDown'||e.key==='s')keys.down=0;
+  if(e.key==='ArrowLeft'||e.key==='a')keys.left=0;
+  if(e.key==='ArrowRight'||e.key==='d')keys.right=0;
+});
+
+let stickActive=false;
+let stickCenter={x:0,y:0};
+stick.addEventListener('pointerdown',e=>{
+  stickActive=true; stickCenter={x:e.clientX,y:e.clientY};
+  stick.setPointerCapture(e.pointerId);
+});
+stick.addEventListener('pointermove',e=>{
+  if(!stickActive)return;
+  let dx = e.clientX - stickCenter.x;
+  let dy = e.clientY - stickCenter.y;
+  const max = 50;
+  let dist = Math.hypot(dx,dy);
+  if(dist>max){dx=dx*max/dist; dy=dy*max/dist;}
+  stick.style.transform = `translate(${dx}px,${dy}px)`;
+  ball.vx += dx/30; ball.vy += dy/30;
+});
+stick.addEventListener('pointerup',e=>{
+  stickActive=false; stick.style.transform='translate(0,0)';
+  stick.releasePointerCapture(e.pointerId);
+});
+
+function loop(){
+  ball.vx += (keys.right-keys.left)*accel;
+  ball.vy += (keys.down-keys.up)*accel;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize',resize);
+resize();
+loop();
+</script>
+</body>
+</html>
