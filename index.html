@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Impossible Solar System - NASA 3D Visualization</title>
+    <!-- Zero Canvas, Zero SVG, Zero images, Zero external files. Pure HTML5, CSS3, JS. -->
+    <!-- Must work offline, instantly. -->
+    <style>
+        /*
+        ================================================================================
+        GLOBAL RESETS & SCENE SETUP (CSS 3D DEMIGOD MODE)
+        ================================================================================
+        */
+        :root {
+            --scene-perspective: 20000px; /* Deep perspective for large scale */
+            --time-multiplier: 1.0;
+            --zoom: 1.0;
+            --AU-scale: 5000; /* Pixels per Astronomical Unit multiplier */
+            --star-color: rgba(255, 255, 255, 0.8);
+        }
+
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* GPU Acceleration / Performance Tricks */
+            will-change: transform, opacity, filter;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            height: 100vh;
+            perspective: var(--scene-perspective);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            /* Subtle cinematic filters */
+            filter: contrast(0.98) brightness(1.02) saturate(1.05);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Film Grain and Vignette via a pseudo-element */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.03;
+            /* Simple film grain using a checkerboard radial gradient */
+            background-image: repeating-conic-gradient(rgba(255, 255, 255, 0.1) 0% 5%, transparent 5% 10%);
+            background-size: 4px 4px;
+            /* Vignette effect */
+            box-shadow: inset 0 0 200px rgba(0, 0, 0, 0.8), inset 0 0 100px rgba(0, 0, 0, 0.6);
+        }
+
+        /*
+        ================================================================================
+        3D UNIVERSE CONTAINERS
+        ================================================================================
+        */
+
+        #universe {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            /* Center the 3D scene in the middle of the screen */
+            transform-style: preserve-3d;
+            transform: translateZ(calc(var(--scene-perspective) * -1)) scale(var(--zoom));
+            transition: transform 0.3s ease-out; /* For smooth zooming/rotation */
+        }
+
+        #scene {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform-style: preserve-3d;
+            /* Scene transform managed by JS for mouse drag rotation */
+        }
+
+        /*
+        ================================================================================
+        VISUAL PERFECTION: BACKGROUND ELEMENTS
+        ================================================================================
+        */
+
+        /* Background: Starfield */
+        #starfield {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            transform-style: preserve-3d;
+            /* Individual stars generated and positioned by JS */
+        }
+
+        .star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: var(--star-color);
+            border-radius: 50%;
+            opacity: 0; /* JS controls initial position and opacity */
+            box-shadow: 0 0 4px var(--star-color);
+            /* Random twinkling phases */
+            animation: twinkle var(--star-duration) infinite alternate;
+        }
+
+        @keyframes twinkle {
+            from { opacity: 0.4; }
+            to { opacity: 1.0; box-shadow: 0 0 6px var(--star-color); }
+        }
+
+        /* Background: Subtle Milky Way arm */
+        #milky-way {
+            position: absolute;
+            width: 50000px;
+            height: 50000px;
+            left: -25000px;
+            top: -25000px;
+            border-radius: 50%;
+            /* Giant blurred divs */
+            background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0) 60%);
+            filter: blur(1000px);
+            transform: rotateX(80deg) translateZ(-10000px) rotateY(45deg);
+        }
+
+        /* Zodiacal Light Cone */
+        #zodiacal-light {
+            position: absolute;
+            width: 10000px;
+            height: 10000px;
+            left: -5000px;
+            top: -5000px;
+            background: conic-gradient(from 135deg, transparent 0%, rgba(255, 255, 200, 0.05) 5%, transparent 20%);
+            transform: rotateX(90deg) translateZ(-500px) rotateY(-15deg);
+            pointer-events: none;
+            opacity: 0.5;
+            mix-blend-mode: screen;
+        }
+
+        /*
+        ================================================================================
+        SUN VISUALS
+        ================================================================================
+        */
+
+        #sun-container {
+            position: absolute;
+            width: 200px; /* Visual scale for the sun */
+            height: 200px;
+            left: -100px;
+            top: -100px;
+            transform-style: preserve-3d;
+        }
+
+        .sun-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            transform: translateZ(0);
+        }
+
+        /* Sun: 7-layer glowing sphere */
+
+        /* 1. Core / Photosphere */
+        #sun-layer-core {
+            /* Animated granulation, limb darkening */
+            background: radial-gradient(circle at 50% 50%,
+                #FFFF00 0%, /* Hot interior */
+                #FFD700 30%,
+                #FFA500 80%, /* Photosphere */
+                #8B4513 95%, /* Limb darkening */
+                #000000 100%
+            );
+            /* Rotating flares using box-shadow */
+            box-shadow: 0 0 30px #FFD700, 0 0 60px #FFA500;
+        }
+
+        /* 2. Chromosphere / Prominences */
+        #sun-layer-chromosphere {
+            width: 110%;
+            height: 110%;
+            top: -5%;
+            left: -5%;
+            background: transparent;
+            /* Using box-shadow for flares/prominences */
+            box-shadow: 0 0 80px 10px rgba(255, 165, 0, 0.7),
+                        50px 0 50px -10px rgba(255, 69, 0, 0.6),
+                        -50px -20px 40px -5px rgba(255, 140, 0, 0.5);
+            animation: sun-flares 20s infinite alternate;
+        }
+
+        @keyframes sun-flares {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg) scale(1.05); }
+        }
+
+        /* 3. Corona (Outer atmosphere, heavily filtered) */
+        #sun-layer-corona {
+            width: 300%;
+            height: 300%;
+            top: -100%;
+            left: -100%;
+            background: radial-gradient(circle, rgba(255, 255, 200, 0.1) 0%, rgba(255, 140, 0, 0.05) 5%, transparent 20%);
+            filter: blur(100px);
+            animation: corona-pulse 30s infinite linear;
+        }
+
+        @keyframes corona-pulse {
+            to { transform: rotate(360deg); }
+        }
+
+        /*
+        ================================================================================
+        ORBITAL STRUCTURES
+        ================================================================================
+        */
+
+        /* Each planet orbits in its own inclined plane */
+        .orbit-plane {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            transform-style: preserve-3d;
+            /* JS applies inclination (rotateX) and node (rotateZ) */
+        }
+
+        /* The actual orbital path container (for positioning the planet) */
+        .orbit-path {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            transform-style: preserve-3d;
+            /* JS applies heliocentric translate3d(x, y, z) */
+        }
+
+        /* Toggleable orbit trails */
+        .orbit-trail {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .show-trails .orbit-trail {
+            opacity: 0.1;
+        }
+
+
+        /*
+        ================================================================================
+        PLANET & DWARF PLANET VISUALS
+        ================================================================================
+        */
+
+        .planet {
+            position: absolute;
+            transform-style: preserve-3d;
+            /* Planet div center is offset based on radius in JS */
+        }
+
+        /* All planets rotate on their exact axial tilt */
+        .planet-tilt-axis {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            /* JS sets the axial tilt (rotateX/Y) */
+        }
+
+        /* The main spherical body */
+        .planet-sphere {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            transform-style: preserve-3d;
+            overflow: hidden; /* Contains layered divs */
+            /* JS sets rotation animation (sidereal day) */
+        }
+
+        /* Nested layers for atmospheric scattering, cloud decks, and surface features */
+        .planet-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            transform: translateZ(0.1px); /* Ensure layering order */
+            mix-blend-mode: normal;
+        }
+
+        /* Realistic atmospheric glow (extra blurred halo divs) */
+        .atmosphere-halo {
+            position: absolute;
+            width: 150%;
+            height: 150%;
+            top: -25%;
+            left: -25%;
+            border-radius: 50%;
+            filter: blur(20px);
+            opacity: 0.6;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* --- MERCURY (3.7x relative radius scale) --- */
+        #mercury .planet-sphere {
+            background: radial-gradient(circle, #777 0%, #444 60%, #333 100%);
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- VENUS (9.5x relative radius scale) --- */
+        #venus .atmosphere-halo {
+            background: rgba(255, 240, 200, 0.3);
+        }
+        #venus .planet-sphere {
+            /* Thick creamy clouds */
+            background: radial-gradient(circle, #FFFACD 0%, #FFEBCD 60%, #F5DEB3 100%);
+        }
+        /* Venus: thick creamy clouds rotating retrograde */
+        #venus-clouds {
+            background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.5) 0% 5%, transparent 5% 10%);
+            mix-blend-mode: overlay;
+            animation: rotate-retrograde var(--rotation-time) linear infinite; /* JS sets rotation time */
+        }
+
+        /* --- EARTH (11x relative radius scale) --- */
+        #earth .atmosphere-halo {
+            background: rgba(0, 100, 255, 0.3);
+        }
+        #earth-surface {
+            /* Blue oceans + green/brown continents */
+            background:
+                /* Oceans */
+                radial-gradient(circle at 50% 50%, #00008B 0%, #00BFFF 100%),
+                /* Continents (Simplified gradient map) */
+                repeating-linear-gradient(45deg, #228B22 0% 20%, #A0522D 20% 40%);
+            background-blend-mode: overlay;
+        }
+        #earth-clouds {
+            /* White swirling cloud layer rotating 5% faster than surface */
+            background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.9) 0%, transparent 40%),
+                        radial-gradient(circle at 30% 60%, rgba(255, 255, 255, 0.7) 0%, transparent 50%);
+            animation: rotate-prograde calc(var(--rotation-time) * 0.95) linear infinite;
+            mix-blend-mode: screen;
+        }
+
+        /* --- MARS (5.5x relative radius scale) --- */
+        #mars .planet-sphere {
+            background: radial-gradient(circle, #CD5C5C 0%, #A52A2A 60%, #8B0000 100%);
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- JUPITER (28x relative radius scale) --- */
+        #jupiter .atmosphere-halo {
+            background: rgba(255, 200, 150, 0.3);
+        }
+        #jupiter-bands {
+            /* 7 colored bands using linear gradients */
+            background:
+                linear-gradient(0deg, #D2B48C 0% 5%, #B8860B 5% 15%, #F0E68C 15% 20%, #B8860B 20% 30%, #D2B48C 30% 70%, #B8860B 70% 80%, #F0E68C 80% 85%, #B8860B 85% 95%, #D2B48C 95% 100%);
+        }
+        /* Rotating Great Red Spot (oval div) */
+        #great-red-spot {
+            position: absolute;
+            width: 15%;
+            height: 8%;
+            border-radius: 50%;
+            background: #800000;
+            top: 40%;
+            left: 70%;
+            transform: rotateZ(30deg);
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+        }
+
+        /* --- SATURN (24x relative radius scale) --- */
+        #saturn-bands {
+            background: linear-gradient(0deg, #F0E68C 0% 10%, #D2B48C 10% 90%, #F0E68C 90% 100%);
+        }
+
+        /* --- SATURN RINGS --- */
+        .ring-system {
+            position: absolute;
+            width: 300%; /* Relative to planet radius */
+            height: 300%;
+            left: -100%;
+            top: -100%;
+            transform-style: preserve-3d;
+            /* JS tilts the rings to match the axial tilt */
+            transform: rotateX(90deg) rotateY(var(--ring-tilt));
+        }
+
+        .ring-layer {
+            position: absolute;
+            border-radius: 50%;
+            /* Transparency, particle density variation */
+        }
+
+        /* A-Ring */
+        #ring-a {
+            width: 80%;
+            height: 80%;
+            top: 10%;
+            left: 10%;
+            border: 25px solid rgba(240, 230, 140, 0.5);
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.1);
+        }
+        /* Cassini Division (Gap) */
+        #ring-cassini {
+            width: 60%;
+            height: 60%;
+            top: 20%;
+            left: 20%;
+            border: 5px solid rgba(0, 0, 0, 0.8);
+        }
+        /* B-Ring */
+        #ring-b {
+            width: 55%;
+            height: 55%;
+            top: 22.5%;
+            left: 22.5%;
+            border: 35px solid rgba(240, 230, 140, 0.8);
+        }
+        /* C-Ring (Crepe Ring) */
+        #ring-c {
+            width: 20%;
+            height: 20%;
+            top: 40%;
+            left: 40%;
+            border: 10px solid rgba(240, 230, 140, 0.2);
+        }
+        /* F-Ring (Simplified as a thin outer line) */
+        #ring-f {
+            width: 90%;
+            height: 90%;
+            top: 5%;
+            left: 5%;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+
+        /* Shadows cast by planet (requires JS positioning, but simulated here via pseudo-element masking) */
+        .ring-shadow {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5);
+            /* This section is complex. JS needs to dynamically position and rotate this shadow div
+               based on the sun's position relative to the ring plane. */
+        }
+
+        /* --- URANUS (18x relative radius scale) --- */
+        #uranus .atmosphere-halo {
+            background: rgba(135, 206, 235, 0.3);
+        }
+        #uranus-surface {
+            background: radial-gradient(circle, #87CEEB 0%, #4682B4 100%);
+            /* Faint dark bands */
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+
+        /* --- NEPTUNE (17x relative radius scale) --- */
+        #neptune .atmosphere-halo {
+            background: rgba(0, 0, 139, 0.3);
+        }
+        #neptune-surface {
+            background: radial-gradient(circle, #4169E1 0%, #00008B 100%);
+            /* Faint dark bands */
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
+        }
+
+        /* --- PLUTO (4x relative radius scale) --- */
+        #pluto .planet-sphere {
+            background: radial-gradient(circle, #D2B48C 0%, #8B4513 60%, #4B3621 100%);
+        }
+
+        /* Generic Rotation Animation (Adjusted by JS for speed and direction) */
+        @keyframes rotate-prograde {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(360deg); }
+        }
+        @keyframes rotate-retrograde {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(-360deg); }
+        }
+
+        /*
+        ================================================================================
+        INTERACTIVITY & HUD ELEMENTS
+        ================================================================================
+        */
+
+        /* Hover: billboarded label + glowing rim */
+        .label {
+            position: absolute;
+            padding: 4px 8px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 3px;
+            font-size: 10px;
+            color: #fff;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, -150%);
+            transition: opacity 0.2s;
+            /* Billboard effect: Always faces camera (managed by JS) */
+        }
+
+        .planet:hover > .label {
+            opacity: 1;
+        }
+
+        .planet-sphere::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .planet:hover .planet-sphere::before {
+            opacity: 1;
+        }
+
+        /* Info Panel */
+        #info-panel {
+            position: fixed;
+            top: 50px;
+            right: 50px;
+            width: 300px;
+            max-height: 80vh;
+            background: rgba(10, 20, 40, 0.95);
+            border: 1px solid #00BFFF;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 191, 255, 0.5);
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(100%);
+            transition: opacity 0.4s, transform 0.4s;
+            overflow-y: auto;
+        }
+
+        #info-panel.visible {
+            opacity: 1;
+            pointer-events: all;
+            transform: translateX(0);
+        }
+
+        #info-panel h2 {
+            color: #00BFFF;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(0, 191, 255, 0.3);
+            padding-bottom: 5px;
+        }
+
+        #info-panel p, #info-panel li {
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        /* Controls Legend */
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+            line-height: 1.6;
+            z-index: 1000;
+        }
+        #controls kbd {
+            display: inline-block;
+            padding: 2px 5px;
+            border: 1px solid #444;
+            border-radius: 3px;
+            backg
